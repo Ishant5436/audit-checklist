@@ -11,6 +11,7 @@ Custom Slither static analysis detectors that mirror the Foundry test checks.
 | `custom-flash-loan-detector` | Low | High | Functions with names containing `swap`/`liquidate`/`redeem`/`execute` that read external state and write state atomically — classic flash loan attack surface | ```solidity\nfunction swap(address tokenIn, address tokenOut) external {\n    uint256 price = IUniswapV2Pair(pair).getReserves()[0];  // read external\n    uint256 amountOut = price * amountIn / 1e18;              // write state\n    IERC20(tokenOut).transfer(msg.sender, amountOut);         // external call\n}\n``` | `slither . --detect custom-flash-loan-detector` |
 | `custom-oracle-manipulation-detector` | Medium | High | Spot price usage (`getPrice`, `latestPrice`, `spotPrice`) without TWAP, single-source oracle without fallback, price-dependent state changes on uncached values | ```solidity\nfunction getAmountOut(uint256 amountIn) public view returns (uint256) {\n    uint256 price = pair.getReserves()[0];      // spot price, no TWAP\n    return price * amountIn / 1e18;\n}\n\nfunction executeTrade() external {\n    uint256 price = getAmountOut(1000);          // reads spot → state change\n    // vulnerable to flash loan manipulation\n}\n``` | `slither . --detect custom-oracle-manipulation-detector` |
 | `custom-governance-detector` | Medium | High | `execute`/`propose` functions without timelock delay, governance parameter changes (`setFee`, `setDelay`, `updateThreshold`) without `onlyGovernance` modifier | ```solidity\nfunction execute(uint256 proposalId) external {\n    // no timelock check — executes immediately\n    targets[proposalId].call(calldata[proposalId]);\n}\n\nfunction setFee(uint256 newFee) external {       // public, no modifier\n    fee = newFee;                                 // critical param change\n}\n``` | `slither . --detect custom-governance-detector` |
+| `custom-upgrade-gap` | Medium | Medium | Upgradeable contracts that append storage variables after `__gap`, which can corrupt proxy storage layouts after upgrades | ```solidity\nuint256[49] private __gap;\nuint256 public newFeeBps; // appended after gap\n``` | `slither . --detect custom-upgrade-gap` |
 
 ## Usage
 
@@ -24,6 +25,15 @@ slither . --config slither.config.json
 ```bash
 slither . --detect custom-reentrancy-detector
 ```
+
+### Run the upgrade-gap detector tests
+```bash
+python3 -m unittest discover -s slither/tests -q
+```
+
+The upgrade-gap fixtures model the intended pattern:
+- `upgrade_gap_bad.sol` appends `newFeeBps` after `__gap` and should be flagged.
+- `upgrade_gap_good.sol` places `newFeeBps` before a shrunken gap and should be ignored.
 
 ### Run with SARIF output
 ```bash
@@ -39,6 +49,7 @@ slither . --config slither.config.json --sarif output.sarif
 | `custom-flash-loan-detector` | [`slither/detectors/custom_flash_loan.py`](slither/detectors/custom_flash_loan.py) |
 | `custom-oracle-manipulation-detector` | [`slither/detectors/custom_oracle.py`](slither/detectors/custom_oracle.py) |
 | `custom-governance-detector` | [`slither/detectors/custom_governance.py`](slither/detectors/custom_governance.py) |
+| `custom-upgrade-gap` | [`slither/detectors/custom_upgrade_gap.py`](slither/detectors/custom_upgrade_gap.py) |
 
 ## Confidence vs Impact
 
